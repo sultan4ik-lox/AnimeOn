@@ -1357,7 +1357,7 @@ header a[aria-label="\u0411\u0430\u0442\u043B\u043F\u0430\u0441\u0441"],
               v0.1.8
             </span>
             <span class="text-xs text-zinc-500">
-              Автор: gogo
+              Автор: sultan4ik-lox
             </span>
           </div>
           <p class="mt-2 text-sm leading-relaxed text-zinc-400">
