@@ -225,7 +225,7 @@
     }
   };
 
-  // src/modules/anti-afk/index.ts
+  // src/modules/anti-captcha/index.ts
   var STORAGE_KEY_AFK = "anti_afk_enabled";
   var CHECK_INTERVAL_MS = 1500;
   var afkTimer = null;
@@ -323,7 +323,7 @@
       el.dispatchEvent(new MouseEvent("mouseup", opts));
       el.dispatchEvent(new MouseEvent("click", opts));
     } catch (e) {
-      console.error("[AnimeOn+] Ошибка клика Anti-AFK:", e);
+      console.error("[AnimeOn+] Ошибка клика Anti-Captcha:", e);
     }
   }
 
@@ -382,7 +382,7 @@
     if (isAntiAfkRunning) return;
     isAntiAfkRunning = true;
     afkTimer = setInterval(handleAfkCheck, CHECK_INTERVAL_MS);
-    console.log("[AnimeOn+] Модуль Anti-AFK (SVG Solver) запущен.");
+    console.log("[AnimeOn+] Модуль Anti-Captcha (SVG Solver) запущен.");
   }
 
   function stopAntiAfk() {
@@ -393,12 +393,12 @@
       clearInterval(afkTimer);
       afkTimer = null;
     }
-    console.log("[AnimeOn+] Модуль Anti-AFK остановлен.");
+    console.log("[AnimeOn+] Модуль Anti-Captcha остановлен.");
   }
 
   var antiAfkModule = {
-    id: "anti-afk",
-    name: "Anti-AFK (Авто-обход 'Вы ещё смотрите?')",
+    id: "anti-captcha",
+    name: "Anti-Captcha (Авто-обход 'Вы ещё смотрите?')",
     description: "Автоматически решает SVG-капчу при проверке присутствия",
     init() {
       if (isAntiAfkEnabled()) {
@@ -1486,7 +1486,7 @@ header a[aria-label="\u0411\u0430\u0442\u043B\u043F\u0430\u0441\u0441"],
         setEnabled: setHideChatButtonEnabled
       },
       {
-        id: "anti-afk",
+        id: "anti-captcha",
         iconSvg: `
         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="10"></circle>
