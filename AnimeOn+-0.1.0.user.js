@@ -10,6 +10,8 @@
 // @grant          GM_setValue
 // @grant          GM_getValue
 // @run-at         document-start
+// @updateURL    https://raw.githubusercontent.com/sultan4ik-lox/AnimeOn/main/AnimeOn+-0.1.0.user.js
+// @downloadURL  https://raw.githubusercontent.com/sultan4ik-lox/AnimeOn/main/AnimeOn+-0.1.0.user.js
 // ==/UserScript==
 
 (() => {
