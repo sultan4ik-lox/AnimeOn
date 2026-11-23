@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name           AnimeOn+
 // @namespace      https://v3.animeon.co/
-// @version        0.1.6
+// @version        0.1.7
 // @description    Quality-of-Life улучшения и дополнительные функции для AnimeOn
 // @author         gogo
 // @license        GPL-3.0-only
@@ -10,8 +10,8 @@
 // @grant          GM_setValue
 // @grant          GM_getValue
 // @run-at         document-start
-// @updateURL    https://raw.githubusercontent.com/sultan4ik-lox/AnimeOn/main/AnimeOn+-0.1.0.user.js
-// @downloadURL  https://raw.githubusercontent.com/sultan4ik-lox/AnimeOn/main/AnimeOn+-0.1.0.user.js
+// @updateURL    https://raw.githubusercontent.com/sultan4ik-lox/AnimeOn/main/AnimeOn%2B.user.js
+// @downloadURL  https://raw.githubusercontent.com/sultan4ik-lox/AnimeOn/main/AnimeOn%2B.user.js
 // ==/UserScript==
 
 (() => {
@@ -1075,6 +1075,43 @@ header a[aria-label="\u0411\u0430\u0442\u043B\u043F\u0430\u0441\u0441"],
     }
   };
 
+  // src/modules/playback-speed/index.ts
+  function initPlaybackSpeed() {
+    const buttonId = "animeon-plus-speed-4x";
+    function syncButton() {
+      if (!location.pathname.startsWith("/anime/")) return;
+      const player = document.getElementById("player");
+      const video = player?.querySelector("video.player-video");
+      if (!video) return;
+      let button = player.querySelector(`#${buttonId}`);
+      if (!button) {
+        const label = Array.from(player.querySelectorAll(".custom-scrollbar > div > span > span"))
+          .find((span) => span.textContent.trim() === "2.5×");
+        if (!label) return;
+        button = document.createElement("button");
+        button.id = buttonId;
+        button.type = "button";
+        button.className = "w-full rounded-lg p-2 text-left text-sm font-medium text-white hover:bg-white/[0.06] aria-pressed:bg-primary/20";
+        button.textContent = "4×";
+        button.addEventListener("click", () => {
+          const current = player.querySelector("video.player-video");
+          if (current?.readyState > 0) current.playbackRate = 4;
+        });
+        label.closest(".custom-scrollbar").appendChild(button);
+      }
+      button.disabled = video.readyState === 0;
+      button.setAttribute("aria-pressed", String(video.playbackRate === 4));
+    }
+    const observer = new MutationObserver(syncButton);
+    observer.observe(document.body, { childList: true, subtree: true });
+    for (const event of ["ratechange", "loadedmetadata", "emptied"]) {
+      document.addEventListener(event, (e) => {
+        if (e.target.matches?.("#player video.player-video")) syncButton();
+      }, true);
+    }
+    syncButton();
+  }
+
   // src/modules/settings/settings-view.ts
   function createAnimeonPlusView() {
     const container = document.createElement("div");
@@ -1267,7 +1304,7 @@ header a[aria-label="\u0411\u0430\u0442\u043B\u043F\u0430\u0441\u0441"],
               AnimeOn+
             </h3>
             <span class="inline-flex items-center rounded-md bg-primary/20 px-2 py-0.5 text-xs font-semibold text-[#D4C6FF]">
-              v0.1.6
+              v0.1.7
             </span>
             <span class="text-xs text-zinc-500">
               Автор: gogo
@@ -1493,6 +1530,7 @@ header a[aria-label="\u0411\u0430\u0442\u043B\u043F\u0430\u0441\u0441"],
     chatModule,
     quickRoomModule,
     homepageCleanerModule,
+    { name: "4× Playback Speed", init: initPlaybackSpeed },
     settingsModule
   ];
   function bootstrap() {
