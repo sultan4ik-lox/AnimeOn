@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name           AnimeOn+
 // @namespace      https://v3.animeon.co/
-// @version        0.1.8
+// @version        0.2.0
 // @description    Quality-of-Life улучшения и дополнительные функции для AnimeOn
 // @author         sultan4ik-lox
 // @license        GPL-3.0-only
@@ -1554,7 +1554,7 @@ header a[aria-label="\u0411\u0430\u0442\u043B\u043F\u0430\u0441\u0441"],
               AnimeOn+
             </h3>
             <span class="inline-flex items-center rounded-md bg-primary/20 px-2 py-0.5 text-xs font-semibold text-[#D4C6FF]">
-              v0.1.867
+              v0.2.0
             </span>
             <span class="text-xs text-zinc-500">
               Автор: sultan4ik-lox
