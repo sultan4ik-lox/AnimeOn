@@ -3,7 +3,7 @@
 // @namespace      https://v3.animeon.co/
 // @version        0.1.8
 // @description    Quality-of-Life улучшения и дополнительные функции для AnimeOn
-// @author         gogo
+// @author         sultan4ik-lox
 // @license        GPL-3.0-only
 // @match          https://v3.animeon.co/*
 // @icon           https://v3.animeon.co/favicon.ico
