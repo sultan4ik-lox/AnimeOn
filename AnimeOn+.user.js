@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name           AnimeOn+
 // @namespace      https://v3.animeon.co/
-// @version        0.1.7
+// @version        0.1.8
 // @description    Quality-of-Life улучшения и дополнительные функции для AnimeOn
 // @author         gogo
 // @license        GPL-3.0-only
@@ -1091,16 +1091,26 @@ header a[aria-label="\u0411\u0430\u0442\u043B\u043F\u0430\u0441\u0441"],
         button = document.createElement("button");
         button.id = buttonId;
         button.type = "button";
-        button.className = "w-full rounded-lg p-2 text-left text-sm font-medium text-white hover:bg-white/[0.06] aria-pressed:bg-primary/20";
-        button.textContent = "4×";
+        button.setAttribute("aria-label", "4×");
+        button.innerHTML = `<span aria-hidden="true" class="pointer-events-none absolute left-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-r-full bg-primary"></span>
+          <span class="text-sm font-medium">4×<span class="text-white/40 text-[11px] font-mono ml-1">4×</span></span>
+          <span aria-hidden="true"><svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></span>`;
+        const list = label.closest(".custom-scrollbar");
         button.addEventListener("click", () => {
           const current = player.querySelector("video.player-video");
-          if (current?.readyState > 0) current.playbackRate = 4;
+          if (!(current?.readyState > 0)) return;
+          current.playbackRate = 4;
+          const back = list.previousElementSibling?.querySelector('button[aria-label="Назад"]');
+          (back || player.querySelector('button[title="Скорость воспроизведения"][aria-expanded="true"]'))?.click();
         });
-        label.closest(".custom-scrollbar").appendChild(button);
+        list.appendChild(button);
       }
+      const selected = video.playbackRate === 4;
       button.disabled = video.readyState === 0;
-      button.setAttribute("aria-pressed", String(video.playbackRate === 4));
+      button.setAttribute("aria-pressed", String(selected));
+      button.className = "relative flex w-full items-center justify-between gap-2 rounded-lg p-2 text-left transition-colors cursor-pointer " +
+        (selected ? "bg-white/[0.07] text-primary" : "text-white hover:bg-white/[0.06] active:bg-white/10");
+      button.firstElementChild.hidden = button.lastElementChild.hidden = !selected;
     }
     const observer = new MutationObserver(syncButton);
     observer.observe(document.body, { childList: true, subtree: true });
@@ -1304,7 +1314,7 @@ header a[aria-label="\u0411\u0430\u0442\u043B\u043F\u0430\u0441\u0441"],
               AnimeOn+
             </h3>
             <span class="inline-flex items-center rounded-md bg-primary/20 px-2 py-0.5 text-xs font-semibold text-[#D4C6FF]">
-              v0.1.7
+              v0.1.8
             </span>
             <span class="text-xs text-zinc-500">
               Автор: gogo
