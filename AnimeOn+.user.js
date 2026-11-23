@@ -1075,6 +1075,46 @@ header a[aria-label="\u0411\u0430\u0442\u043B\u043F\u0430\u0441\u0441"],
     }
   };
 
+  // src/modules/background-pause/index.ts
+  function initBackgroundPause() {
+    let video;
+    let wasPlaying = false;
+
+    function getVideo() {
+      return document.querySelector("#player video.player-video");
+    }
+
+    function bindVideo() {
+      const current = getVideo();
+      if (!current || current === video) return;
+      video = current;
+      wasPlaying = !video.paused;
+      video.addEventListener("play", () => {
+        wasPlaying = true;
+      });
+      video.addEventListener("pause", () => {
+        if (document.visibilityState === "hidden" && wasPlaying) {
+          video.play()?.catch(() => {});
+        } else if (document.visibilityState === "visible") {
+          wasPlaying = false;
+        }
+      });
+    }
+
+    bindVideo();
+    new MutationObserver(bindVideo).observe(document.body || document.documentElement, {
+      childList: true,
+      subtree: true
+    });
+    document.addEventListener("visibilitychange", () => {
+      bindVideo();
+      if (document.visibilityState === "hidden" && wasPlaying && video?.paused) {
+        video.play()?.catch(() => {});
+      }
+      if (document.visibilityState === "visible") wasPlaying = Boolean(video && !video.paused);
+    });
+  }
+
   // src/modules/playback-speed/index.ts
   function initPlaybackSpeed() {
     const buttonId = "animeon-plus-speed-4x";
@@ -1540,6 +1580,7 @@ header a[aria-label="\u0411\u0430\u0442\u043B\u043F\u0430\u0441\u0441"],
     chatModule,
     quickRoomModule,
     homepageCleanerModule,
+    { name: "Background Playback", init: initBackgroundPause },
     { name: "4× Playback Speed", init: initPlaybackSpeed },
     settingsModule
   ];
