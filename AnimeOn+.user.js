@@ -9,6 +9,7 @@
 // @icon           https://v3.animeon.co/favicon.ico
 // @grant          GM_setValue
 // @grant          GM_getValue
+// @grant          unsafeWindow
 // @run-at         document-start
 // @updateURL    https://raw.githubusercontent.com/sultan4ik-lox/AnimeOn/main/AnimeOn%2B.user.js
 // @downloadURL  https://raw.githubusercontent.com/sultan4ik-lox/AnimeOn/main/AnimeOn%2B.user.js
@@ -223,6 +224,192 @@
       }
     }
   };
+
+  // src/modules/anti-afk/index.ts
+  var STORAGE_KEY_AFK = "anti_afk_enabled";
+  var CHECK_INTERVAL_MS = 1500;
+  var afkTimer = null;
+  var isAntiAfkRunning = false;
+  var isSolvingCaptcha = false;
+
+  function isAntiAfkEnabled() {
+    return storage.get(STORAGE_KEY_AFK, true);
+  }
+
+  function setAntiAfkEnabled(enabled) {
+    storage.set(STORAGE_KEY_AFK, enabled);
+    if (enabled) {
+      startAntiAfk();
+    } else {
+      stopAntiAfk();
+    }
+  }
+
+  function levenshtein(a, b) {
+    const dp = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+    for (let j = 1; j <= b.length; j++) dp.at(0)[j] = j;
+    for (let i = 1; i <= a.length; i++) {
+      for (let j = 1; j <= b.length; j++) {
+        dp.at(i)[j] = a.at(i - 1) === b.at(j - 1)
+          ? dp.at(i - 1)[j - 1]
+          : 1 + Math.min(dp.at(i - 1)[j], dp.at(i)[j - 1], dp.at(i - 1)[j - 1]);
+      }
+    }
+    return dp.at(a.length)[b.length];
+  }
+
+  function parseSvgDigits(svg) {
+    const paths = Array.from(svg.querySelectorAll("path")).map((p) => {
+      const d = p.getAttribute("d") || "";
+      const bbox = p.getBBox();
+      const segs = d.replace(/[^A-Za-z]/g, "").slice(1);
+      const length = p.getTotalLength();
+      return { segs, length, bbox, d };
+    });
+
+    const digits = paths.filter((p) => p.length > 45);
+    digits.sort((a, b) => a.bbox.x - b.bbox.x);
+
+    return digits.map((dig) => {
+      const coords = dig.d.match(/-?\d+(\.\d+)?/g).map(Number);
+      const w = dig.bbox.width || 1;
+      const h = dig.bbox.height || 1;
+
+      const sx = (coords.at(0) - dig.bbox.x) / w;
+      const sy = (coords.at(1) - dig.bbox.y) / h;
+      const ex = (coords.at(-2) - dig.bbox.x) / w;
+      const ey = (coords.at(-1) - dig.bbox.y) / h;
+
+      return { segs: dig.segs, sx, sy, ex, ey };
+    });
+  }
+
+  function compareDigits(d1, d2) {
+    const directCmd = levenshtein(d1.segs, d2.segs) * 1.5;
+    const directGeom = Math.abs(d1.sx - d2.sx) + Math.abs(d1.sy - d2.sy) +
+                       Math.abs(d1.ex - d2.ex) + Math.abs(d1.ey - d2.ey);
+
+    const revSegs = d2.segs.split("").reverse().join("");
+    const revCmd = levenshtein(d1.segs, revSegs) * 1.5;
+    const revGeom = Math.abs(d1.sx - d2.ex) + Math.abs(d1.sy - d2.ey) +
+                    Math.abs(d1.ex - d2.sx) + Math.abs(d1.ey - d2.sy);
+
+    return Math.min(directCmd + directGeom, revCmd + revGeom);
+  }
+
+  function simulateUserClick(el) {
+    if (!el) return;
+    try {
+      const rect = el.getBoundingClientRect();
+      const clientX = rect.left + rect.width * (0.3 + Math.random() * 0.4);
+      const clientY = rect.top + rect.height * (0.3 + Math.random() * 0.4);
+
+      const opts = {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        clientX,
+        clientY,
+        button: 0,
+        buttons: 1
+      };
+
+      el.dispatchEvent(new PointerEvent("pointerover", opts));
+      el.dispatchEvent(new MouseEvent("mouseover", opts));
+      el.dispatchEvent(new PointerEvent("pointerdown", opts));
+      el.dispatchEvent(new MouseEvent("mousedown", opts));
+      el.focus?.();
+      el.dispatchEvent(new PointerEvent("pointerup", opts));
+      el.dispatchEvent(new MouseEvent("mouseup", opts));
+      el.dispatchEvent(new MouseEvent("click", opts));
+    } catch (e) {
+      console.error("[AnimeOn+] Ошибка клика Anti-AFK:", e);
+    }
+  }
+
+  function handleAfkCheck() {
+    if (!isAntiAfkEnabled() || isSolvingCaptcha) return;
+
+    const heading = Array.from(document.querySelectorAll("h1, h2, h3, div, p, span"))
+      .find((el) => el.children.length === 0 && /Вы ещё смотрите\?|Вы здесь\?/i.test(el.textContent.trim()));
+
+    if (!heading) return;
+
+    const modal = heading.closest("div[class]")?.parentElement || heading.parentElement;
+    if (!modal) return;
+
+    const svgs = Array.from(modal.querySelectorAll("svg")).slice(0, 5);
+    if (svgs.length < 5) return;
+
+    const targetDigits = parseSvgDigits(svgs.at(0));
+    if (targetDigits.length === 0) return;
+
+    let bestBtn = null;
+    let bestScore = Infinity;
+
+    svgs.slice(1).forEach((btnSvg, idx) => {
+      const btnDigits = parseSvgDigits(btnSvg);
+      if (btnDigits.length !== targetDigits.length) return;
+
+      let totalScore = 0;
+      targetDigits.forEach((td, i) => {
+        totalScore += compareDigits(td, btnDigits.at(i));
+      });
+
+      if (totalScore < bestScore) {
+        bestScore = totalScore;
+        bestBtn = { element: btnSvg.closest("button") || btnSvg.parentElement, index: idx + 1 };
+      }
+    });
+
+    if (bestBtn && bestBtn.element) {
+      isSolvingCaptcha = true;
+      const delay = 1500 + Math.random() * 1500;
+      console.log(`%c[AnimeOn+] Капча решена! Выбран Вариант #${bestBtn.index} (оценка: ${bestScore.toFixed(2)}). Клик через ${Math.round(delay)} мс`, "color: #10B981; font-weight: bold;");
+
+      setTimeout(() => {
+        if (bestBtn.element.isConnected) {
+          simulateUserClick(bestBtn.element);
+        }
+        setTimeout(() => {
+          isSolvingCaptcha = false;
+        }, 3500);
+      }, delay);
+    }
+  }
+
+  function startAntiAfk() {
+    if (isAntiAfkRunning) return;
+    isAntiAfkRunning = true;
+    afkTimer = setInterval(handleAfkCheck, CHECK_INTERVAL_MS);
+    console.log("[AnimeOn+] Модуль Anti-AFK (SVG Solver) запущен.");
+  }
+
+  function stopAntiAfk() {
+    if (!isAntiAfkRunning) return;
+    isAntiAfkRunning = false;
+    isSolvingCaptcha = false;
+    if (afkTimer) {
+      clearInterval(afkTimer);
+      afkTimer = null;
+    }
+    console.log("[AnimeOn+] Модуль Anti-AFK остановлен.");
+  }
+
+  var antiAfkModule = {
+    id: "anti-afk",
+    name: "Anti-AFK (Авто-обход 'Вы ещё смотрите?')",
+    description: "Автоматически решает SVG-капчу при проверке присутствия",
+    init() {
+      if (isAntiAfkEnabled()) {
+        startAntiAfk();
+      }
+    },
+    destroy() {
+      stopAntiAfk();
+    }
+  };
+  (typeof unsafeWindow !== "undefined" ? unsafeWindow : window).__animeon_simulateClick = simulateUserClick;
 
   // src/modules/hide-premium/index.ts
   var STORAGE_KEY = "hide_premium_enabled";
@@ -1297,6 +1484,19 @@ header a[aria-label="\u0411\u0430\u0442\u043B\u043F\u0430\u0441\u0441"],
         description: "\u0423\u0431\u0438\u0440\u0430\u0435\u0442 \u043F\u043B\u0430\u0432\u0430\u044E\u0449\u0443\u044E \u043A\u0440\u0443\u0433\u043B\u0443\u044E \u043A\u043D\u043E\u043F\u043A\u0443 \u0447\u0430\u0442\u0430 \u0432 \u043F\u0440\u0430\u0432\u043E\u043C \u043D\u0438\u0436\u043D\u0435\u043C \u0443\u0433\u043B\u0443 \u044D\u043A\u0440\u0430\u043D\u0430",
         isEnabled: isHideChatButtonEnabled,
         setEnabled: setHideChatButtonEnabled
+      },
+      {
+        id: "anti-afk",
+        iconSvg: `
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>
+      `,
+        title: "Авто-обход проверки 'Вы здесь?'",
+        description: "Автоматически нажимает на кнопки с цифрами, если сайт просит подтвердить присутствие",
+        isEnabled: isAntiAfkEnabled,
+        setEnabled: setAntiAfkEnabled
       }
     ];
     const toggleRowsHtml = toggleOptions.map((opt) => {
@@ -1354,7 +1554,7 @@ header a[aria-label="\u0411\u0430\u0442\u043B\u043F\u0430\u0441\u0441"],
               AnimeOn+
             </h3>
             <span class="inline-flex items-center rounded-md bg-primary/20 px-2 py-0.5 text-xs font-semibold text-[#D4C6FF]">
-              v0.1.8
+              v0.1.867
             </span>
             <span class="text-xs text-zinc-500">
               Автор: sultan4ik-lox
@@ -1580,6 +1780,7 @@ header a[aria-label="\u0411\u0430\u0442\u043B\u043F\u0430\u0441\u0441"],
     chatModule,
     quickRoomModule,
     homepageCleanerModule,
+    antiAfkModule,
     { name: "Background Playback", init: initBackgroundPause },
     { name: "4× Playback Speed", init: initPlaybackSpeed },
     settingsModule
