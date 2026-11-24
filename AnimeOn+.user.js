@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name           AnimeOn+
 // @namespace      https://v3.animeon.co/
-// @version        0.2.0
+// @version        0.2.1
 // @description    Quality-of-Life улучшения и дополнительные функции для AnimeOn
 // @author         sultan4ik-lox
 // @license        GPL-3.0-only
@@ -259,29 +259,31 @@
   }
 
   function parseSvgDigits(svg) {
-    const paths = Array.from(svg.querySelectorAll("path")).map((p) => {
-      const d = p.getAttribute("d") || "";
-      const bbox = p.getBBox();
-      const segs = d.replace(/[^A-Za-z]/g, "").slice(1);
-      const length = p.getTotalLength();
-      return { segs, length, bbox, d };
-    });
-
-    const digits = paths.filter((p) => p.length > 45);
-    digits.sort((a, b) => a.bbox.x - b.bbox.x);
-
-    return digits.map((dig) => {
-      const coords = dig.d.match(/-?\d+(\.\d+)?/g).map(Number);
-      const w = dig.bbox.width || 1;
-      const h = dig.bbox.height || 1;
-
-      const sx = (coords.at(0) - dig.bbox.x) / w;
-      const sy = (coords.at(1) - dig.bbox.y) / h;
-      const ex = (coords.at(-2) - dig.bbox.x) / w;
-      const ey = (coords.at(-1) - dig.bbox.y) / h;
-
-      return { segs: dig.segs, sx, sy, ex, ey };
-    });
+    return Array.from(svg.querySelectorAll("path")).map((el) => {
+      const raw = el.getAttribute("d") || "";
+      const segs = raw.replace(/[^A-Za-z]/g, "").slice(1);
+      const pts = raw.match(/-?\d+(\.\d+)?/g)?.map(Number) || [];
+      let minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9, len = 0;
+      for (let i = 0; i < pts.length - 1; i += 2) {
+        const px = pts[i], py = pts[i + 1];
+        if (px < minX) minX = px;
+        if (py < minY) minY = py;
+        if (px > maxX) maxX = px;
+        if (py > maxY) maxY = py;
+        if (i > 1) len += Math.hypot(px - pts[i - 2], py - pts[i - 1]);
+      }
+      return { segs, len, minX, minY, w: (maxX - minX) || 1, h: (maxY - minY) || 1, pts };
+    }).filter((item) => item.pts.length >= 4)
+      .sort((a, b) => b.len - a.len)
+      .slice(0, 2)
+      .sort((a, b) => a.minX - b.minX)
+      .map((d) => ({
+        segs: d.segs,
+        sx: (d.pts[0] - d.minX) / d.w,
+        sy: (d.pts[1] - d.minY) / d.h,
+        ex: (d.pts[d.pts.length - 2] - d.minX) / d.w,
+        ey: (d.pts[d.pts.length - 1] - d.minY) / d.h
+      }));
   }
 
   function compareDigits(d1, d2) {
@@ -300,89 +302,87 @@
   function simulateUserClick(el) {
     if (!el) return;
     try {
-      const rect = el.getBoundingClientRect();
-      const clientX = rect.left + rect.width * (0.3 + Math.random() * 0.4);
-      const clientY = rect.top + rect.height * (0.3 + Math.random() * 0.4);
-
-      const opts = {
+      const box = el.getBoundingClientRect();
+      const init = {
         bubbles: true,
         cancelable: true,
-        view: window,
-        clientX,
-        clientY,
+        clientX: box.left + box.width * 0.5,
+        clientY: box.top + box.height * 0.5,
         button: 0,
         buttons: 1
       };
-
-      el.dispatchEvent(new PointerEvent("pointerover", opts));
-      el.dispatchEvent(new MouseEvent("mouseover", opts));
-      el.dispatchEvent(new PointerEvent("pointerdown", opts));
-      el.dispatchEvent(new MouseEvent("mousedown", opts));
-      el.focus?.();
-      el.dispatchEvent(new PointerEvent("pointerup", opts));
-      el.dispatchEvent(new MouseEvent("mouseup", opts));
-      el.dispatchEvent(new MouseEvent("click", opts));
-    } catch (e) {
-      console.error("[AnimeOn+] Ошибка клика Anti-Captcha:", e);
+      ["pointerdown", "mousedown", "pointerup", "mouseup"].forEach((ev) => {
+        const Ctor = ev.startsWith("p") && typeof PointerEvent === "function" ? PointerEvent : MouseEvent;
+        el.dispatchEvent(new Ctor(ev, init));
+      });
+      el.click();
+    } catch {
+      try { el.click(); } catch {}
     }
   }
 
   function handleAfkCheck() {
     if (!isAntiAfkEnabled() || isSolvingCaptcha) return;
+    const promptEl = Array.from(document.querySelectorAll("h1, h2, h3, div, p, span"))
+      .find((node) => node.children.length === 0 && /Вы ещё смотрите\?|Вы здесь\?/i.test(node.textContent.trim()));
+    if (!promptEl) return;
 
-    const heading = Array.from(document.querySelectorAll("h1, h2, h3, div, p, span"))
-      .find((el) => el.children.length === 0 && /Вы ещё смотрите\?|Вы здесь\?/i.test(el.textContent.trim()));
+    let wrapper = promptEl.parentElement;
+    while (wrapper && wrapper !== document.body && wrapper.querySelectorAll("svg").length < 5) {
+      wrapper = wrapper.parentElement;
+    }
+    if (!wrapper) return;
 
-    if (!heading) return;
+    const graphics = Array.from(wrapper.querySelectorAll("svg")).slice(0, 5);
+    const goal = parseSvgDigits(graphics.at(0));
 
-    const modal = heading.closest("div[class]")?.parentElement || heading.parentElement;
-    if (!modal) return;
+    if (!goal.length) return;
 
-    const svgs = Array.from(modal.querySelectorAll("svg")).slice(0, 5);
-    if (svgs.length < 5) return;
-
-    const targetDigits = parseSvgDigits(svgs.at(0));
-    if (targetDigits.length === 0) return;
-
-    let bestBtn = null;
-    let bestScore = Infinity;
-
-    svgs.slice(1).forEach((btnSvg, idx) => {
-      const btnDigits = parseSvgDigits(btnSvg);
-      if (btnDigits.length !== targetDigits.length) return;
-
-      let totalScore = 0;
-      targetDigits.forEach((td, i) => {
-        totalScore += compareDigits(td, btnDigits.at(i));
-      });
-
-      if (totalScore < bestScore) {
-        bestScore = totalScore;
-        bestBtn = { element: btnSvg.closest("button") || btnSvg.parentElement, index: idx + 1 };
+    let chosen = null, minErr = Infinity;
+    graphics.slice(1).forEach((item, idx) => {
+      const candidate = parseSvgDigits(item);
+      if (candidate.length !== goal.length) return;
+      const err = goal.reduce((acc, g, k) => acc + compareDigits(g, candidate[k]), 0);
+      if (err < minErr) {
+        minErr = err;
+        chosen = { btn: item.closest("button") || item.parentElement, num: idx + 1 };
       }
     });
 
-    if (bestBtn && bestBtn.element) {
+    if (chosen?.btn) {
       isSolvingCaptcha = true;
-      const delay = 1500 + Math.random() * 1500;
-      console.log(`%c[AnimeOn+] Капча решена! Выбран Вариант #${bestBtn.index} (оценка: ${bestScore.toFixed(2)}). Клик через ${Math.round(delay)} мс`, "color: #10B981; font-weight: bold;");
-
+      const wait = /Android|iPhone|iPad/i.test(navigator.userAgent) ? 450 : 1400;
       setTimeout(() => {
-        if (bestBtn.element.isConnected) {
-          simulateUserClick(bestBtn.element);
-        }
+        if (chosen.btn.isConnected) simulateUserClick(chosen.btn);
         setTimeout(() => {
+          const media = document.querySelector("#player video");
+          if (media?.paused) media.play().catch(() => {});
           isSolvingCaptcha = false;
-        }, 3500);
-      }, delay);
+        }, 1100);
+      }, wait);
     }
   }
 
   function startAntiAfk() {
     if (isAntiAfkRunning) return;
     isAntiAfkRunning = true;
-    afkTimer = setInterval(handleAfkCheck, CHECK_INTERVAL_MS);
-    console.log("[AnimeOn+] Модуль Anti-Captcha (SVG Solver) запущен.");
+
+    const keepAwake = () => {
+      if ("wakeLock" in navigator && document.visibilityState === "visible") {
+        navigator.wakeLock.request("screen").catch(() => {});
+      }
+    };
+    keepAwake();
+    document.addEventListener("visibilitychange", keepAwake);
+
+    afkTimer = setInterval(() => {
+      keepAwake();
+      handleAfkCheck();
+    }, CHECK_INTERVAL_MS);
+
+    new MutationObserver(() => {
+      if (!isSolvingCaptcha) handleAfkCheck();
+    }).observe(document.body || document.documentElement, { childList: true, subtree: true });
   }
 
   function stopAntiAfk() {
@@ -1554,7 +1554,7 @@ header a[aria-label="\u0411\u0430\u0442\u043B\u043F\u0430\u0441\u0441"],
               AnimeOn+
             </h3>
             <span class="inline-flex items-center rounded-md bg-primary/20 px-2 py-0.5 text-xs font-semibold text-[#D4C6FF]">
-              v0.2.0
+              v0.2.1
             </span>
             <span class="text-xs text-zinc-500">
               Автор: sultan4ik-lox
